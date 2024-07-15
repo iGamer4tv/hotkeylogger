@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hotkey Logger</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        #programControls, #recordingControls, #keyboardContainer {
+            margin-bottom: 20px;
+        }
+        #keyboard {
+            display: grid;
+            grid-template-columns: repeat(15, 1fr);
+            gap: 5px;
+            background-color: #f0f0f0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .key {
+            background-color: white;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            font-size: 12px;
+            padding: 5px;
+            height: 30px;
+        }
+        .key.wide {
+            grid-column: span 2;
+        }
+        .key.extra-wide {
+            grid-column: span 3;
+        }
+        .pressed {
+            background-color: #007bff;
+            color: white;
+        }
+        #hotkeyList {
+            border: 1px solid #ccc;
+            padding: 10px;
+            height: 200px;
+            overflow-y: auto;
+        }
+        .recording {
+            background-color: #ffcccb;
+        }
+        #recordingIndicator {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-left: 10px;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <h1>Hotkey Logger</h1>
+    
+    <div id="programControls">
+        <select id="programSelect">
+            <option value="">Select a program</option>
+        </select>
+        <button id="addProgram">Add Program</button>
+        <button id="removeProgram" disabled>Remove Program</button>
+    </div>
+    
+    <div id="recordingControls">
+        <button id="startRecording" disabled>Start Recording</button>
+        <button id="endRecording" disabled>End Recording</button>
+        <div id="recordingStatus"></div>
+        <div id="recordingIndicator"></div>
+        <div id="pressedKeys"></div>
+    </div>
+    
+    <div id="keyboardContainer">
+        <div id="keyboard"></div>
+    </div>
+    
+    <div>
+        <input type="text" id="filterHotkeys" placeholder="Filter hotkeys...">
+    </div>
+    
+    <div id="hotkeyList"></div>
+
+    <script>
+        let hotkeysData = {};
+        let currentProgram = '';
+        let recording = false;
+        let currentKeys = new Set();
+
+        const programSelect = document.getElementById('programSelect');
+        const addProgramBtn = document.getElementById('addProgram');
+        const removeProgramBtn = document.getElementById('removeProgram');
+        const startRecordingBtn = document.getElementById('startRecording');
+        const endRecordingBtn = document.getElementById('endRecording');
+        const recordingStatus = document.getElementById('recordingStatus');
+        const recordingIndicator = document.getElementById('recordingIndicator');
+        const pressedKeys = document.getElementById('pressedKeys');
+        const keyboard = document.getElementById('keyboard');
+        const filterInput = document.getElementById('filterHotkeys');
+        const hotkeyList = document.getElementById('hotkeyList');
+
+        function initializeKeyboard() {
+            const keyLayout = [
+                { code: 'Escape', label: 'Esc' },
+                { code: 'F1', label: 'F1' },
+                { code: 'F2', label: 'F2' },
+                { code: 'F3', label: 'F3' },
+                { code: 'F4', label: 'F4' },
+                { code: 'F5', label: 'F5' },
+                { code: 'F6', label: 'F6' },
+                { code: 'F7', label: 'F7' },
+                { code: 'F8', label: 'F8' },
+                { code: 'F9', label: 'F9' },
+                { code: 'F10', label: 'F10' },
+                { code: 'F11', label: 'F11' },
+                { code: 'F12', label: 'F12' },
+                { code: 'Backquote', label: '`' },
+                { code: 'Digit1', label: '1' },
+                { code: 'Digit2', label: '2' },
+                { code: 'Digit3', label: '3' },
+                { code: 'Digit4', label: '4' },
+                { code: 'Digit5', label: '5' },
+                { code: 'Digit6', label: '6' },
+                { code: 'Digit7', label: '7' },
+                { code: 'Digit8', label: '8' },
+                { code: 'Digit9', label: '9' },
+                { code: 'Digit0', label: '0' },
+                { code: 'Minus', label: '-' },
+                { code: 'Equal', label: '=' },
+                { code: 'Backspace', label: 'Backspace', wide: true },
+                { code: 'Tab', label: 'Tab', wide: true },
+                { code: 'KeyQ', label: 'Q' },
+                { code: 'KeyW', label: 'W' },
+                { code: 'KeyE', label: 'E' },
+                { code: 'KeyR', label: 'R' },
+                { code: 'KeyT', label: 'T' },
+                { code: 'KeyY', label: 'Y' },
+                { code: 'KeyU', label: 'U' },
+                { code: 'KeyI', label: 'I' },
+                { code: 'KeyO', label: 'O' },
+                { code: 'KeyP', label: 'P' },
+                { code: 'BracketLeft', label: '[' },
+                { code: 'BracketRight', label: ']' },
+                { code: 'Backslash', label: '\\' },
+                { code: 'CapsLock', label: 'Caps Lock', wide: true },
+                { code: 'KeyA', label: 'A' },
+                { code: 'KeyS', label: 'S' },
+                { code: 'KeyD', label: 'D' },
+                { code: 'KeyF', label: 'F' },
+                { code: 'KeyG', label: 'G' },
+                { code: 'KeyH', label: 'H' },
+                { code: 'KeyJ', label: 'J' },
+                { code: 'KeyK', label: 'K' },
+                { code: 'KeyL', label: 'L' },
+                { code: 'Semicolon', label: ';' },
+                { code: 'Quote', label: "'" },
+                { code: 'Enter', label: 'Enter', wide: true },
+                { code: 'ShiftLeft', label: 'Shift', wide: true },
+                { code: 'KeyZ', label: 'Z' },
+                { code: 'KeyX', label: 'X' },
+                { code: 'KeyC', label: 'C' },
+                { code: 'KeyV', label: 'V' },
+                { code: 'KeyB', label: 'B' },
+                { code: 'KeyN', label: 'N' },
+                { code: 'KeyM', label: 'M' },
+                { code: 'Comma', label: ',' },
+                { code: 'Period', label: '.' },
+                { code: 'Slash', label: '/' },
+                { code: 'ShiftRight', label: 'Shift', wide: true },
+                { code: 'ControlLeft', label: 'Ctrl' },
+                { code: 'MetaLeft', label: 'Win' },
+                { code: 'AltLeft', label: 'Alt' },
+                { code: 'Space', label: 'Space', extraWide: true },
+                { code: 'AltRight', label: 'Alt' },
+                { code: 'MetaRight', label: 'Win' },
+                { code: 'ContextMenu', label: 'Menu' },
+                { code: 'ControlRight', label: 'Ctrl' }
+            ];
+
+            keyLayout.forEach(key => {
+                const keyElement = document.createElement('div');
+                keyElement.className = 'key';
+                if (key.wide) keyElement.classList.add('wide');
+                if (key.extraWide) keyElement.classList.add('extra-wide');
+                keyElement.textContent = key.label;
+                keyElement.dataset.key = key.code;
+                keyboard.appendChild(keyElement);
+            });
+        }
+
+        function updateProgramList() {
+            programSelect.innerHTML = '<option value="">Select a program</option>';
+            Object.keys(hotkeysData).forEach(program => {
+                const option = document.createElement('option');
+                option.value = program;
+                option.textContent = program;
+                programSelect.appendChild(option);
+            });
+            updateButtonStates();
+        }
+
+        function addProgram() {
+            const program = prompt('Enter program name:');
+            if (program && !hotkeysData[program]) {
+                hotkeysData[program] = [];
+                updateProgramList();
+                programSelect.value = program;
+                currentProgram = program;
+                updateButtonStates();
+            }
+        }
+
+        function removeProgram() {
+            if (currentProgram && confirm(`Are you sure you want to remove '${currentProgram}'?`)) {
+                delete hotkeysData[currentProgram];
+                currentProgram = '';
+                updateProgramList();
+                updateHotkeyList();
+                updateButtonStates();
+            }
+        }
+
+        function startRecording() {
+            if (currentProgram) {
+                recording = true;
+                currentKeys.clear();
+                recordingStatus.textContent = 'Recording...';
+                document.body.classList.add('recording');
+                updateButtonStates();
+                blinkRecordingIndicator();
+            } else {
+                alert('Please select a program first.');
+            }
+        }
+
+        function endRecording() {
+            if (recording) {
+                recording = false;
+                recordingStatus.textContent = '';
+                document.body.classList.remove('recording');
+                
+                if (currentKeys.size > 0) {
+                    const label = prompt('Enter label for the hotkey:');
+                    if (label) {
+                        hotkeysData[currentProgram].push({ keys: Array.from(currentKeys), label: label });
+                        updateHotkeyList();
+                    }
+                }
+                resetKeyboard();
+                updateButtonStates();
+            }
+        }
+
+        function resetKeyboard() {
+            currentKeys.clear();
+            updatePressedKeys();
+            document.querySelectorAll('.key').forEach(key => {
+                key.classList.remove('pressed');
+            });
+        }
+
+        function updatePressedKeys() {
+            pressedKeys.textContent = `Pressed keys: ${Array.from(currentKeys).join(' + ')}`;
+        }
+
+        function updateHotkeyList() {
+            hotkeyList.innerHTML = '';
+            if (currentProgram && hotkeysData[currentProgram]) {
+                const filteredHotkeys = hotkeysData[currentProgram].filter(hotkey => 
+                    hotkey.keys.join(' + ').toLowerCase().includes(filterInput.value.toLowerCase()) ||
+                    hotkey.label.toLowerCase().includes(filterInput.value.toLowerCase())
+                );
+                
+                filteredHotkeys.forEach((hotkey, index) => {
+                    const hotkeyElement = document.createElement('div');
+                    hotkeyElement.innerHTML = `<strong>${index + 1}. ${hotkey.keys.join(' + ')}:</strong> "${hotkey.label}"`;
+                    hotkeyList.appendChild(hotkeyElement);
+                });
+            }
+        }
+
+        function blinkRecordingIndicator() {
+            if (recording) {
+                recordingIndicator.style.backgroundColor = 
+                    recordingIndicator.style.backgroundColor === 'red' ? 'white' : 'red';
+                setTimeout(blinkRecordingIndicator, 500);
+            } else {
+                recordingIndicator.style.backgroundColor = '';
+            }
+        }
+
+        function updateButtonStates() {
+            const programSelected = currentProgram !== '';
+            removeProgramBtn.disabled = !programSelected;
+            startRecordingBtn.disabled = !programSelected;
+            endRecordingBtn.disabled = !recording;
+        }
+
+        // Event Listeners
+        programSelect.addEventListener('change', (e) => {
+            currentProgram = e.target.value;
+            updateHotkeyList();
+            updateButtonStates();
+        });
+
+        addProgramBtn.addEventListener('click', addProgram);
+        removeProgramBtn.addEventListener('click', removeProgram);
+        startRecordingBtn.addEventListener('click', startRecording);
+        endRecordingBtn.addEventListener('click', endRecording);
+        filterInput.addEventListener('input', updateHotkeyList);
+
+        document.addEventListener('keydown', (e) => {
+            if (recording) {
+                e.preventDefault();
+                currentKeys.add(e.code);
+                updatePressedKeys();
+                const keyElement = document.querySelector(`.key[data-key="${e.code}"]`);
+                if (keyElement) keyElement.classList.add('pressed');
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (recording) {
+                e.preventDefault();
+                currentKeys.delete(e.code);
+                updatePressedKeys();
+            }
+            const keyElement = document.querySelector(`.key[data-key="${e.code}"]`);
+            if (keyElement) keyElement.classList.remove('pressed');
+        });
+
+        // Initialize
+        initializeKeyboard();
+        updateProgramList();
+        updateButtonStates();
+    </script>
+</body>
+</html>
